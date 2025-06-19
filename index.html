@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crazy Supabase Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <style>
+        :root {
+            --bg-color: #f4f7f9;
+            --text-color: #333;
+            --border-color: #e0e0e0;
+            --header-bg: #ffffff;
+            --table-header-bg: #f9fafb;
+            --row-hover-bg: #eff6ff;
+            --primary-color: #3b82f6;
+            --primary-hover: #2563eb;
+            --danger-color: #ef4444;
+            --danger-hover: #dc2626;
+            --card-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+
+        html.dark {
+            --bg-color: #111827;
+            --text-color: #e5e7eb;
+            --border-color: #374151;
+            --header-bg: #1f2937;
+            --table-header-bg: #1f2937;
+            --row-hover-bg: #374151;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 2rem;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem;
+            background-color: var(--header-bg);
+            border-radius: 12px;
+            box-shadow: var(--card-shadow);
+            margin-bottom: 2rem;
+        }
+        .header h1 { margin: 0; font-size: 1.75rem; }
+        .controls { display: flex; gap: 1rem; align-items: center; }
+
+        input[type="search"], input.edit-input {
+            padding: 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-size: 1rem;
+        }
+        
+        .btn {
+            padding: 0.75rem 1.25rem;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .btn:active { transform: scale(0.98); }
+        .btn-primary { background-color: var(--primary-color); color: white; }
+        .btn-primary:hover { background-color: var(--primary-hover); }
+        
+        .table-container { 
+            background-color: var(--header-bg);
+            border-radius: 12px;
+            box-shadow: var(--card-shadow);
+            overflow: hidden;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 1rem 1.5rem; text-align: left; border-bottom: 1px solid var(--border-color); }
+        th { 
+            background-color: var(--table-header-bg); 
+            font-weight: 600; 
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+        th .sort-icon { margin-left: 0.5rem; opacity: 0.5; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover { background-color: var(--row-hover-bg); }
+        
+        .actions-cell { text-align: right !important; }
+        .action-btn { background: none; border: none; cursor: pointer; color: var(--text-color); font-size: 1.1rem; padding: 0.5rem; border-radius: 50%; }
+        .action-btn:hover { background-color: var(--row-hover-bg); }
+        .btn-delete { color: var(--danger-color); }
+        .btn-delete:hover { color: var(--danger-hover); }
+
+        .empty-state { padding: 4rem; text-align: center; color: #9ca3af; }
+
+        /* SKELETON LOADER */
+        .skeleton { animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+        .skeleton-text {
+            height: 1.25rem;
+            background-color: var(--border-color);
+            border-radius: 0.25rem;
+            width: 80%;
+        }
+
+        /* TOAST NOTIFICATION */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background-color: #22c55e;
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            transform: translateY(200%);
+            opacity: 0;
+            transition: transform 0.5s ease-in-out, opacity 0.5s ease-in-out;
+        }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast.error { background-color: var(--danger-color); }
+
+        /* DARK MODE TOGGLE */
+        .dark-mode-toggle { cursor: pointer; font-size: 1.5rem; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header class="header">
+            <h1><i class="fa-solid fa-graduation-cap" style="color: var(--primary-color);"></i> Student Dashboard</h1>
+            <div class="controls">
+                <input type="search" id="search-input" placeholder="Search students...">
+                <button class="btn btn-primary" id="add-btn"><i class="fa-solid fa-plus"></i> Add Student</button>
+                <div class="dark-mode-toggle" id="dark-mode-toggle"><i class="fa-solid fa-moon"></i></div>
+            </div>
+        </header>
+
+        <main class="table-container">
+            <table id="data-table">
+                <thead>
+                </thead>
+                <tbody id="data-body">
+                </tbody>
+            </table>
+        </main>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // --- 1. CONFIGURATION ---
+        const SUPABASE_URL = 'https://dxomxagqcawaabxtlvoq.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4b214YWdxY2F3YWFieHRsdm9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk2MDM3NDgsImV4cCI6MjA2NTE3OTc0OH0.9DFqa0kAxe4ziB1ddR80pVPG-W5i_jp7_Bk_b_1hKP4';
+        const TABLE_NAME = 'students';
+        const PRIMARY_KEY_COLUMN = 'id';
+        
+        // --- 2. INITIALIZATION & DOM ELEMENTS ---
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const tableBody = document.getElementById('data-body');
+        const tableHead = document.querySelector('#data-table thead');
+        const searchInput = document.getElementById('search-input');
+        const addButton = document.getElementById('add-btn');
+        const darkModeToggle = document.getElementById('dark-mode-toggle');
+
+        let state = {
+            data: [],
+            headers: [],
+            sortBy: PRIMARY_KEY_COLUMN,
+            sortAsc: true,
+            searchTerm: '',
+        };
+
+        // --- 3. CORE RENDERING & DATA LOGIC ---
+
+        function renderSkeletonLoader() {
+            const skeletonHeaders = `<tr><th colspan="4"><div class="skeleton skeleton-text" style="width: 40%;"></div></th></tr>`;
+            tableHead.innerHTML = skeletonHeaders;
+            let skeletonRows = '';
+            for (let i = 0; i < 5; i++) {
+                skeletonRows += `<tr><td><div class="skeleton skeleton-text"></div></td><td><div class="skeleton skeleton-text"></div></td><td><div class="skeleton skeleton-text"></div></td><td><div class="skeleton skeleton-text"></div></td></tr>`;
+            }
+            tableBody.innerHTML = skeletonRows;
+        }
+
+        function renderTable() {
+            // Render Headers
+            let headerHTML = '<tr>';
+            state.headers.forEach(header => {
+                const sortIcon = state.sortBy === header ? (state.sortAsc ? '<i class="fa-solid fa-arrow-down-short-wide sort-icon"></i>' : '<i class="fa-solid fa-arrow-up-wide-short sort-icon"></i>') : '<i class="fa-solid fa-sort sort-icon" style="opacity: 0.2;"></i>';
+                headerHTML += `<th data-sort="${header}">${header.replace('_', ' ')} ${sortIcon}</th>`;
+            });
+            headerHTML += '<th>Actions</th></tr>';
+            tableHead.innerHTML = headerHTML;
+
+            // Filter and Sort Data
+            const filteredData = state.data.filter(item => 
+                Object.values(item).some(val => String(val).toLowerCase().includes(state.searchTerm.toLowerCase()))
+            );
+
+            // Handle the case where there is no data to show
+            if (filteredData.length === 0) {
+                const colSpan = state.headers.length + 1;
+                tableBody.innerHTML = `<tr><td colspan="${colSpan}" class="empty-state"><i class="fa-solid fa-user-graduate fa-2x"></i><p>No students found.</p></td></tr>`;
+                return;
+            }
+
+            const sortedData = [...filteredData].sort((a, b) => {
+                const valA = a[state.sortBy];
+                const valB = b[state.sortBy];
+                if (valA < valB) return state.sortAsc ? -1 : 1;
+                if (valA > valB) return state.sortAsc ? 1 : -1;
+                return 0;
+            });
+            
+            tableBody.innerHTML = sortedData.map(row => {
+                // The use of ` (backticks) allows us to pass strings and numbers safely
+                let rowHTML = `<tr data-id="${row[PRIMARY_KEY_COLUMN]}">`;
+                state.headers.forEach(header => {
+                    rowHTML += `<td data-column="${header}">${row[header] === null ? '' : row[header]}</td>`;
+                });
+                rowHTML += `<td class="actions-cell"><button class="action-btn" onclick="handleEdit(this)"><i class="fa-solid fa-pencil"></i></button><button class="action-btn btn-delete" onclick="handleDelete(\`${row[PRIMARY_KEY_COLUMN]}\`)"><i class="fa-solid fa-trash"></i></button></td></tr>`;
+                return rowHTML;
+            }).join('');
+        }
+
+        async function fetchData() {
+            const { data, error } = await supabaseClient.from(TABLE_NAME).select('*');
+            if (error) {
+                showToast(`Error fetching data: ${error.message}`, 'error');
+                tableBody.innerHTML = `<tr><td colspan="100%" class="empty-state" style="color: var(--danger-color)">Error loading data.</td></tr>`;
+                return;
+            }
+            
+            // Set headers based on the first record, even if the table was empty before
+            if (data.length > 0 && state.headers.length === 0) {
+                state.headers = Object.keys(data[0]);
+            }
+            state.data = data;
+            renderTable();
+        }
+
+        // --- 4. EVENT HANDLERS & ACTIONS ---
+
+        async function handleAdd() {
+            // If we don't know the headers yet (table is empty), fetch first
+            if (state.headers.length === 0) {
+                await fetchData();
+                // If still no headers, we can't add a row.
+                if (state.headers.length === 0) {
+                    showToast("Cannot add a record to an empty table without columns. Please define columns in Supabase first.", "error");
+                    return;
+                }
+            }
+
+            const newRow = tableBody.insertRow(0);
+            newRow.id = 'new-row';
+            let cellHTML = '';
+            state.headers.forEach(header => {
+                if (header === PRIMARY_KEY_COLUMN) {
+                    cellHTML += `<td><input type="text" placeholder="(auto)" class="edit-input" data-column="${header}" disabled></td>`;
+                } else {
+                    cellHTML += `<td><input type="text" placeholder="${header.replace('_', ' ')}" class="edit-input" data-column="${header}"></td>`;
+                }
+            });
+            cellHTML += `<td class="actions-cell"><button class="action-btn" onclick="handleSaveNew()"><i class="fa-solid fa-check" style="color: #22c55e;"></i></button><button class="action-btn btn-delete" onclick="document.getElementById('new-row').remove()"><i class="fa-solid fa-xmark"></i></button></td>`;
+            newRow.innerHTML = cellHTML;
+            newRow.querySelector('input:not([disabled])').focus();
+        }
+
+        async function handleSaveNew() {
+            const newRow = document.getElementById('new-row');
+            const newRecord = {};
+            newRow.querySelectorAll('.edit-input').forEach(input => {
+                const column = input.dataset.column;
+                // Don't include the disabled primary key or empty values in the insert object
+                if (!input.disabled && input.value.trim() !== '') {
+                   newRecord[column] = input.value;
+                }
+            });
+            
+            const { error } = await supabaseClient.from(TABLE_NAME).insert([newRecord]);
+            if (error) {
+                showToast(`Error adding record: ${error.message}`, 'error');
+                newRow.remove();
+            } else {
+                showToast('Student added successfully!');
+            }
+        }
+        
+        function handleEdit(button) {
+            const row = button.closest('tr');
+            row.querySelectorAll('td[data-column]').forEach(cell => {
+                const column = cell.dataset.column;
+                if (column === PRIMARY_KEY_COLUMN) return; // Don't allow editing primary key
+                const value = cell.textContent;
+                cell.innerHTML = `<input type="text" value="${value}" class="edit-input">`;
+            });
+            row.querySelector('input.edit-input').focus();
+            button.parentElement.innerHTML = `<button class="action-btn" onclick="handleSave(this)"><i class="fa-solid fa-check" style="color: #22c55e;"></i></button><button class="action-btn btn-delete" onclick="renderTable()"><i class="fa-solid fa-xmark"></i></button>`;
+        }
+
+        async function handleSave(button) {
+            const row = button.closest('tr');
+            const id = row.dataset.id;
+            const updates = {};
+            row.querySelectorAll('input.edit-input').forEach(input => {
+                const column = input.parentElement.dataset.column;
+                updates[column] = input.value;
+            });
+
+            const { error } = await supabaseClient.from(TABLE_NAME).update(updates).eq(PRIMARY_KEY_COLUMN, id);
+            if (error) {
+                showToast(`Error updating record: ${error.message}`, 'error');
+            } else {
+                showToast('Record updated successfully!');
+            }
+        }
+
+        async function handleDelete(id) {
+            if (confirm(`Are you sure you want to delete this record?`)) {
+                const { error } = await supabaseClient.from(TABLE_NAME).delete().eq(PRIMARY_KEY_COLUMN, id);
+                if (error) {
+                    showToast(`Error deleting record: ${error.message}`, 'error');
+                } else {
+                    showToast('Record deleted successfully!');
+                }
+            }
+        }
+
+        // --- 5. UTILITIES & REAL-TIME SUBSCRIPTION ---
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type}`;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        supabaseClient.channel('public:' + TABLE_NAME)
+            .on('postgres_changes', { event: '*', schema: 'public', table: TABLE_NAME }, payload => {
+                console.log('Change received!', payload);
+                fetchData();
+            })
+            .subscribe();
+
+        darkModeToggle.addEventListener('click', () => {
+            const html = document.documentElement;
+            html.classList.toggle('dark');
+            darkModeToggle.innerHTML = html.classList.contains('dark') ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+            localStorage.setItem('darkMode', html.classList.contains('dark'));
+        });
+
+        if (localStorage.getItem('darkMode') === 'true') {
+            document.documentElement.classList.add('dark');
+            darkModeToggle.innerHTML = '<i class="fa-solid fa-sun"></i>';
+        }
+
+        // --- 6. INITIAL LOAD & EVENT LISTENERS ---
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            renderSkeletonLoader();
+            fetchData();
+        });
+
+        searchInput.addEventListener('input', e => {
+            state.searchTerm = e.target.value;
+            renderTable();
+        });
+        
+        addButton.addEventListener('click', handleAdd);
+
+        tableHead.addEventListener('click', e => {
+            const th = e.target.closest('th');
+            if (th && th.dataset.sort) {
+                const sortKey = th.dataset.sort;
+                if (state.sortBy === sortKey) {
+                    state.sortAsc = !state.sortAsc;
+                } else {
+                    state.sortBy = sortKey;
+                    state.sortAsc = true;
+                }
+                renderTable();
+            }
+        });
+    </script>
+</body>
+</html>
